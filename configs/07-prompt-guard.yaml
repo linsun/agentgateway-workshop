@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+#
+# CAPABILITY: prompt guards on both request and response paths.
+# LLM gateway, port 4000. This is the fix for the injection that arrives
+# through the trends server.
+#
+# In the simplified 1.4 format the prompt/response guardrails attach as
+# llm.policies.guardrails (a PromptGuard). The request/response guard shape is
+# unchanged from the older routes.policies.ai.promptGuard form.
+#
+# ONE GATEWAY, TWO LANES: this config is the step 3 fix, so it carries BOTH the
+# guarded LLM lane (port 4000) and the same fixtures-pinned multiplex lane as
+# 06-injection (port 3000). It is a drop-in replacement for 06 that adds the
+# guard -- swap 06 -> 07 and the injection arriving through the tools is masked.
+# The agent env does not change:
+#   LLM_BASE_URL=http://localhost:4000/v1  LLM_MODEL=trend-pro
+#   MCP_URL=http://localhost:3000/mcp
+#
+# ---------------------------------------------------------------------------
+# WHY THE REQUEST PATH CATCHES AN ATTACK THAT ARRIVED VIA A TOOL
+# ---------------------------------------------------------------------------
+#   1. Model calls a trends tool. The trending feed carries each thread's top
+#      comment, and t04's is poisoned with instructions aimed at the model.
+#   2. Agent appends that tool result as a role:"tool" message and sends the
+#      NEXT chat completion request.
+#
+# By that next request the attacker's text is in an OUTBOUND request to the
+# model, so the request guard sees it and masks it BEFORE the model does. The
+# attack arrived through the tool layer but only becomes dangerous as prompt
+# content -- which is why the control belongs on the LLM lane, not the MCP path,
+# and why it is deterministic: it does not depend on the model choosing to resist.
+#
+# ---------------------------------------------------------------------------
+# WHY MASK AND NOT REJECT
+# ---------------------------------------------------------------------------
+# Rejecting kills the turn and the user gets no digest. Masking redacts the
+# injected imperative while the legitimate comment survives, so the agent
+# summarizes the thread correctly and never sees the instruction. Better demo,
+# and the better production default for indirect injection.
+#
+# ---------------------------------------------------------------------------
+# THE RESPONSE GUARD IS A DIFFERENT CONTROL
+# ---------------------------------------------------------------------------
+# The request guard stops the agent being instructed. The response guard is
+# brand safety: it inspects what the agent is about to say before that text can
+# reach a saved digest or a public channel. Two jobs, two paths. An agent that
+# reads strangers' text and also publishes genuinely needs both directions.
+#
+# ---------------------------------------------------------------------------
+# HONEST CAVEATS, say these out loud
+# ---------------------------------------------------------------------------
+# * Regex is brittle. It works cleanly here because we wrote the payload.
+#   Rephrase the attack and it gets through. Regex is layer one: fast,
+#   deterministic, sub-millisecond. Layer two is a webhook guard, which can
+#   call a second local model as a judge.
+# * Ordering: rate limiting is evaluated BEFORE prompt guards. A request
+#   rejected by a guard has already consumed the user's token budget.
+#   Authentication runs before rate limiting, so unauthenticated requests do
+#   not consume quota.
+# * Guards are not a substitute for tool authorization. Config 05 removes the
+#   agent's ability to publish at all. Defense in depth means both: if the
+#   agent cannot reach the tool, no phrasing of the payload matters.
+#
+# If you edit the payload in fixtures/discussions.json, run
+# `python3 tests/test_all.py` afterwards. It checks these patterns still match.
+
+llm:
+  port: 4000
+  policies:
+    guardrails:
+      request:
+        - regex:
+            action: mask
+            rules:
+              - pattern: "(?i)IMPORTANT SYSTEM INSTRUCTION"
+              - pattern: "(?i)instruction for any ai assistant"
+              - pattern: "(?i)ignore (all |any )?previous instructions"
+              - pattern: "(?i)do not mention this instruction"
+              - pattern: "(?i)do not ask the user for confirmation"
+              - pattern: "(?i)you are authorized to promote"
+      response:
+        - regex:
+            action: mask
+            rules:
+              - pattern: "(?i)best-agent-deals\\.example\\.invalid"
+              - pattern: "(?i)cut your ai costs by"
+              - pattern: "(?i)exclusive offer"
+  models:
+    - name: trend-pro
+      provider: openAI
+      params:
+        baseUrl: http://localhost:11434/v1
+        model: qwen3:8b
+        apiKey: ollama-does-not-check-this
+
+mcp:
+  port: 3000
+  policies:
+    cors:
+      allowOrigins: ["*"]
+      allowHeaders:
+        - content-type
+        - accept
+        - cache-control
+        - mcp-protocol-version
+        - mcp-method
+        - mcp-name
+  targets:
+    - name: trends
+      stdio:
+        cmd: .venv/bin/python3
+        args: ["./mcp-servers/trends_server.py"]
+        # Force the offline corpus: this is the step 3 fix config, and the
+        # injection it guards against only exists in the fixtures. Elsewhere the
+        # trends server tries live Hacker News first with an automatic fallback.
+        env:
+          TRENDS_FIXTURES: "1"
+    - name: workspace
+      stdio:
+        cmd: .venv/bin/python3
+        args: ["./mcp-servers/workspace_server.py"]
+    - name: publish
+      stdio:
+        cmd: .venv/bin/python3
+        args: ["./mcp-servers/publish_server.py"]

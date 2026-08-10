@@ -1,0 +1,90 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GitHub Search (trimmed)",
+    "description": "A deliberately small subset of the GitHub REST API for the credential-injection lab. The full GitHub OpenAPI description is enormous and would generate hundreds of MCP tools, which would ironically re-teach the tool-sprawl lesson from step 2. This file has three operations. Regenerate or extend it from https://github.com/github/rest-api-description if you need more.",
+    "version": "1.0.0"
+  },
+  "servers": [{ "url": "https://api.github.com" }],
+  "paths": {
+    "/search/repositories": {
+      "get": {
+        "operationId": "search_repositories",
+        "summary": "Search GitHub repositories by keyword, ranked by popularity. GitHub has no trending API, so approximate it: pass 'q' as a plain keyword string AND set sort='stars' to surface the most-starred repos. Example: q='AI agents', sort='stars'.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "REQUIRED. A single plain-text keyword STRING (not an object), the field is named q. Keep it to a few keywords, e.g. 'AI agents' or 'LLM agent framework' -- avoid stars:> filters, sort by popularity instead.",
+            "schema": { "type": "string", "example": "AI agents" }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "ALWAYS set this to 'stars' to rank by popularity. GitHub's default is relevance, which surfaces obscure low-star repos.",
+            "schema": { "type": "string", "enum": ["stars", "forks", "updated"], "default": "stars", "example": "stars" }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["desc", "asc"] }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "Set this to 3. GitHub returns a large object per repo and defaults to 30, which a small local model cannot digest -- always request just 3.",
+            "schema": { "type": "integer", "maximum": 100, "example": 3 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching repositories",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}": {
+      "get": {
+        "operationId": "get_repository",
+        "summary": "Get details for one repository, including stars, description and topics.",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository detail",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/rate_limit": {
+      "get": {
+        "operationId": "get_rate_limit",
+        "summary": "Show the current API rate limit. Useful for proving whether a credential was injected: 60 per hour means unauthenticated, 5000 means the token was attached.",
+        "responses": {
+          "200": {
+            "description": "Rate limit status",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    }
+  }
+}

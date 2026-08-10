@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+#
+# CAPABILITY: proxy one MCP server. It is launched over stdio and has no idea it
+# is being proxied. No SDK, no middleware, no code change to the server.
+#
+# Run from the repo root; paths below are relative.
+#
+# ONE GATEWAY, TWO LANES: this single config serves both the LLM lane (port
+# 4000, the model the agent talks to) and the MCP lane (port 3000, the tools).
+# The agent needs both, and one agentgateway process owns a single admin port
+# (15000), so running the LLM and MCP lanes as two processes would collide.
+# Declaring llm and mcp together keeps it to one process. Set:
+#   LLM_BASE_URL=http://localhost:4000/v1  LLM_MODEL=trend-pro
+#   MCP_URL=http://localhost:3000/mcp
+
+llm:
+  port: 4000
+  models:
+    - name: trend-pro
+      provider: openAI
+      params:
+        baseUrl: http://localhost:11434/v1
+        model: qwen3:8b
+        apiKey: ollama-does-not-check-this
+  policies:
+    cors:
+      allowOrigins:
+      - http://localhost:15000
+      allowHeaders:
+      - '*'
+      allowMethods:
+      - GET
+      - POST
+mcp:
+  port: 3000
+  policies:
+    cors:
+      # MCP 2026-07-28 is stateless: the Mcp-Session-Id header and the
+      # protocol-level session are gone, so there is nothing to expose.
+      # Routing metadata now rides in headers instead of the JSON-RPC
+      # body, which is what lets a load balancer route without parsing.
+      allowOrigins: ["*"]
+      allowHeaders:
+        - content-type
+        - accept
+        - cache-control
+        - mcp-protocol-version
+        - mcp-method
+        - mcp-name
+  targets:
+    - name: trends
+      stdio:
+        cmd: .venv/bin/python3
+        args: ["./mcp-servers/trends_server.py"]

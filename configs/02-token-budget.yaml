@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+#
+# CAPABILITY: token-based rate limiting. The core of a "virtual key", which is
+# not one feature but API key auth + a token budget + observability, composed.
+#
+# type: tokens means the bucket is measured in LLM tokens, not requests.
+# Token limits are checked twice: at request time against the prompt, and again
+# at response time once completion length is known.
+#
+# Budget is deliberately small. Building a digest reads several full article
+# bodies and post texts, so this bites within two or three runs.
+
+llm:
+  port: 4000
+  policies:
+    localRateLimit:
+      - maxTokens: 5000
+        tokensPerFill: 5000
+        fillInterval: 300s
+        type: tokens
+    cors:
+      allowOrigins:
+      - http://localhost:15000
+      allowHeaders:
+      - '*'
+      allowMethods:
+      - GET
+      - POST
+  models:
+    - name: trend-pro
+      provider: openAI
+      params:
+        baseUrl: http://localhost:11434/v1
+        model: qwen3:8b
+        apiKey: ollama-does-not-check-this

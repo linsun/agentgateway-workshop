@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+#
+# CAPABILITY: CEL-based tool authorization. Two layers from one policy:
+#   1. Filtered at discovery. Removed from list_tools, so the model never sees
+#      it. You are not relying on the model to behave.
+#   2. Denied at execution. A client that calls it anyway is refused.
+#
+# CEL variables:
+#   mcp.tool.name     tool name, unprefixed, e.g. "post_to_social"
+#   mcp.tool.target   backend target name, e.g. "publish"
+#   mcp.method_name   the JSON-RPC method being invoked
+#   jwt.<claim>       claims from a validated token (see 09)
+#
+# The gradient reads as a sentence: read the trends, work in your workspace,
+# publish only with authority.
+#
+# NOT conditioned on identity yet -- everyone gets the same view. That still
+# shrinks the prompt and fixes the accuracy problem from 04. Config 09 adds
+# identity and turns these same rules into per-user views without rewriting them.
+#
+# If a rule fails to parse in your build, start simple and build up:
+#   'mcp.tool.target == "trends"'
+
+# ONE GATEWAY, TWO LANES (see 03): this config serves the LLM lane on 4000 and
+# the MCP lane below. The agent needs both; one process avoids the admin-port
+# (15000) collision two agentgateway processes would hit.
+#   LLM_BASE_URL=http://localhost:4000/v1  LLM_MODEL=trend-pro
+#   MCP_URL=http://localhost:3000/mcp
+llm:
+  port: 4000
+  models:
+    - name: trend-pro
+      provider: openAI
+      params:
+        baseUrl: http://localhost:11434/v1
+        model: qwen3:8b
+        apiKey: ollama-does-not-check-this
+
+mcp:
+  port: 3000
+  policies:
+    cors:
+      # MCP 2026-07-28 is stateless: the Mcp-Session-Id header and the
+      # protocol-level session are gone, so there is nothing to expose.
+      # Routing metadata now rides in headers instead of the JSON-RPC
+      # body, which is what lets a load balancer route without parsing.
+      allowOrigins: ["*"]
+      allowHeaders:
+        - content-type
+        - accept
+        - cache-control
+        - mcp-protocol-version
+        - mcp-method
+        - mcp-name
+    mcpAuthorization:
+      rules:
+        - 'mcp.tool.target == "trends"'
+        - 'mcp.tool.target == "workspace"'
+        - 'mcp.tool.target == "publish" && mcp.tool.name == "get_public_feed"'
+  targets:
+    - name: trends
+      stdio:
+        cmd: .venv/bin/python3
+        args: ["./mcp-servers/trends_server.py"]
+    - name: workspace
+      stdio:
+        cmd: .venv/bin/python3
+        args: ["./mcp-servers/workspace_server.py"]
+    - name: publish
+      stdio:
+        cmd: .venv/bin/python3
+        args: ["./mcp-servers/publish_server.py"]

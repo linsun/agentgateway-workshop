@@ -1,0 +1,7 @@
+# The MCP 2026-07-28 spec went final on 2026-07-28 and is a BREAKING change:
+# no initialize handshake, no Mcp-Session-Id, protocol metadata inline per
+# request. Pin an SDK version that speaks it; see README.md "Sanity checks first".
+mcp>=2.0.0
+openai>=1.60.0
+pyjwt>=2.8.0
+cryptography>=42.0.0

@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+#
+# CAPABILITY: turn a REST API into MCP tools with zero server code, and watch
+# GitHub's UNAUTHENTICATED rate limit -- no token anywhere.
+#
+# ---------------------------------------------------------------------------
+# THE POINT
+# ---------------------------------------------------------------------------
+# This is 08-credential-injection.yaml with the backendAuth block removed. The
+# gateway still reads the OpenAPI spec and generates the same MCP tools, but it
+# attaches NO Authorization header on egress. GitHub sees an anonymous caller,
+# so get_rate_limit returns 60 requests/hour -- the unauthenticated ceiling.
+#
+# Run this one first, with nothing exported. Then, if you have a token, switch
+# to 08-credential-injection.yaml with GITHUB_TOKEN set and watch the same tool
+# return 5000. 60 -> 5000 is the credential injection, shown from both sides.
+#
+# ---------------------------------------------------------------------------
+# WHY A SEPARATE CONFIG INSTEAD OF JUST NOT SETTING THE TOKEN
+# ---------------------------------------------------------------------------
+# In 08-credential-injection.yaml, backendAuth.key.value is $GITHUB_TOKEN. If
+# that variable is unset, the gateway STILL attaches an Authorization header --
+# now carrying an empty bearer value -- and GitHub rejects it with 401, not the
+# clean 60/hour you wanted to show. Removing backendAuth entirely is what makes
+# the anonymous path honest: no header, no 401, just the real unauthenticated
+# rate limit. That is why this is its own file rather than a "leave the env var
+# unset" footnote on the other one.
+#
+# ---------------------------------------------------------------------------
+# WHY A TRIMMED SPEC
+# ---------------------------------------------------------------------------
+# The full GitHub OpenAPI description is enormous and would generate hundreds
+# of tools. github-search.openapi.json has three operations and ships in this
+# repo, so nothing is fetched at startup.
+
+# ONE GATEWAY, TWO LANES (see 03): this config serves the LLM lane on 4000 and
+# the GitHub MCP lane on 3000. The agent needs both; one process avoids the
+# admin-port (15000) collision two agentgateway processes would hit.
+#   LLM_BASE_URL=http://localhost:4000/v1  LLM_MODEL=trend-pro
+#   MCP_URL=http://localhost:3000/mcp
+llm:
+  port: 4000
+  models:
+    - name: trend-pro
+      provider: openAI
+      params:
+        baseUrl: http://localhost:11434/v1
+        model: qwen3:8b
+        apiKey: ollama-does-not-check-this
+
+mcp:
+  port: 3000
+  policies:
+    cors:
+      # MCP 2026-07-28 is stateless: the Mcp-Session-Id header and the
+      # protocol-level session are gone, so there is nothing to expose.
+      # Routing metadata now rides in headers instead of the JSON-RPC
+      # body, which is what lets a load balancer route without parsing.
+      allowOrigins: ["*"]
+      allowHeaders:
+        - content-type
+        - accept
+        - cache-control
+        - mcp-protocol-version
+        - mcp-method
+        - mcp-name
+    # No backendAuth here -- that is the whole point. Nothing is attached on
+    # egress, so GitHub sees an anonymous caller and applies the 60/hour limit.
+  targets:
+    - name: github
+      openapi:
+        # host takes a URI with scheme -- use https:// so the gateway does TLS.
+        # A bare host:port (api.github.com:443) connects in plaintext to a TLS
+        # port and the connection is dropped ("connection closed").
+        host: https://api.github.com
+        schema:
+          file: ./configs/github-search.openapi.json

@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+#
+# CAPABILITY: federate three MCP servers behind one endpoint and one connection.
+# Tools are automatically prefixed by target, so trending_discussions becomes
+# trends_trending_discussions.
+#
+# The three servers are deliberately different in KIND, not just in content:
+#   trends     untrusted input from strangers
+#   workspace  your own preferences and saved digests
+#   publish    irreversible public writes
+#
+# That is what makes the authorization story in 05 and 09 mean something.
+#
+# Watch the prompt token count when you run the agent against this: it jumps as
+# the ten tool schemas land in every request, on every turn. That prefill cost
+# is the lesson -- and it is the reliable signal, where wall-clock on a local
+# model is noisy and easily confounded by whether trends served live or fixtures.
+#
+# Publish is federated here with no restriction at all -- the realistic starting
+# point. This config is live-first; 06-injection pins the same tools to fixtures
+# for the step 3 attack.
+
+# ONE GATEWAY, TWO LANES (see 03): this config serves the LLM lane on 4000 and
+# the MCP lane below. The agent needs both; one process avoids the admin-port
+# (15000) collision two agentgateway processes would hit.
+#   LLM_BASE_URL=http://localhost:4000/v1  LLM_MODEL=trend-pro
+#   MCP_URL=http://localhost:3000/mcp
+llm:
+  port: 4000
+  models:
+    - name: trend-pro
+      provider: openAI
+      params:
+        baseUrl: http://localhost:11434/v1
+        model: qwen3:8b
+        apiKey: ollama-does-not-check-this
+  policies:
+    cors:
+      allowOrigins:
+      - http://localhost:15000
+      allowHeaders:
+      - '*'
+      allowMethods:
+      - GET
+      - POST
+mcp:
+  port: 3000
+  policies:
+    cors:
+      # MCP 2026-07-28 is stateless: the Mcp-Session-Id header and the
+      # protocol-level session are gone, so there is nothing to expose.
+      # Routing metadata now rides in headers instead of the JSON-RPC
+      # body, which is what lets a load balancer route without parsing.
+      allowOrigins: ["*"]
+      allowHeaders:
+        - content-type
+        - accept
+        - cache-control
+        - mcp-protocol-version
+        - mcp-method
+        - mcp-name
+  targets:
+    - name: trends
+      stdio:
+        cmd: .venv/bin/python3
+        args: ["./mcp-servers/trends_server.py"]
+    - name: workspace
+      stdio:
+        cmd: .venv/bin/python3
+        args: ["./mcp-servers/workspace_server.py"]
+    - name: publish
+      stdio:
+        cmd: .venv/bin/python3
+        args: ["./mcp-servers/publish_server.py"]
