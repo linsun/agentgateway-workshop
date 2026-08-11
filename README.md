@@ -389,7 +389,7 @@ python3 agent/trendwatch.py "what is my GitHub rate limit?"
 - [ ] Rate limit now returns **5000/hour** — the gateway attached the token. The
       jump from **60 → 5000** is the credential injection, shown from both sides.
 - [ ] `echo $GITHUB_TOKEN` in terminal 2 is **empty** — the agent reached GitHub
-      without ever holding the credential. That single number is the whole lab.
+      without ever holding the credential.
 - [ ] Export the token **before** launching the gateway. Env vars are read once
       at startup, so a token set after launch keeps returning 401 until you
       restart the gateway in the shell that has it.
@@ -408,9 +408,6 @@ python3 agent/trendwatch.py "what are the most popular agentic AI repositories o
 > itself out of its token budget (you get the clean "returned only reasoning"
 > fallback, not a hallucination). `get_rate_limit` is the reliable proof; a
 > stronger model summarizes the search fully.
-
-If the config is rejected, the likely culprit is `schema.file` — swap to the
-`schema.url` form shown in the comments at the top of the config.
 
 ## Step 5 — identity
 
@@ -460,11 +457,7 @@ python3 agent/trendwatch.py "Get the single top trending item, then publish it b
 > run -- a fresh feed check reads empty, which is expected, not a lost post.
 > Verify by posting and reading the feed in the SAME run (the prompt above does
 > both). Saved digests survive across runs because they are written to `./out/`;
-> the feed does not. Reading the feed back also catches the other small-model
-> failure here: without it, the model may narrate a fake success (an invented
-> `post_id`) without ever calling the tool. A real post prints `*** PUBLISHED`
-> and returns a `posted_at` timestamp; if the model picks an invalid channel
-> (only `public`, `team`, `all` are valid) that call errors and nothing lands.
+> the feed does not.
 
 - [ ] Anonymous: `workspace_save_digest` is absent
 - [ ] Reader token: saving works (a file appears in `./out/`); publish tools absent
@@ -474,8 +467,21 @@ python3 agent/trendwatch.py "Get the single top trending item, then publish it b
       were not rewritten from step 2; they gained a claim
       (`has(jwt.sub)`, `"publisher" in jwt.roles`).
 
-If `mode: optional` is not supported on your build, the fallback is two configs —
-one anonymous, one requiring auth — and you swap between them.
+If you prefer strict for MCP authentication and have it enforced on the agentgateway, simply use the `09-mcp-identity-strict.yaml`.
+
+```bash
+# terminal 1
+agentgateway -f 09-mcp-identity-strict.yaml
+```
+
+```bash
+# terminal 2
+unset MCP_TOKEN
+python3 agent/trendwatch.py "$SAVE"                             # anonymous: save tool absent, nothing written with 401 mcp authentication failure error in the gateway log
+
+export MCP_TOKEN=$READER_JWT
+python3 agent/trendwatch.py "$SAVE"                   
+```
 
 ## Wrap
 
