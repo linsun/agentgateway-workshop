@@ -485,41 +485,5 @@ python3 agent/trendwatch.py "$SAVE"
 
 ## Wrap
 
-The whole point, in one command:
+Nothing is required for the agent to support traffic control, credential injection, rate limiting, prompt guard, MCP multiplexing and auth. Everything infrastructure related can land in gateway configuration, not in the agent.
 
-```bash
-git diff step0..step5 -- agent/
-```
-
-Nothing. Everything above — token budgets, injection defense, federation,
-filtering, credential injection, identity — landed in gateway configuration, not
-in the agent.
-
-## Tests
-
-An offline harness that needs no network, no agentgateway, no Ollama and no MCP
-SDK:
-
-```bash
-python3 tests/test_all.py          # structural and behavioural checks
-python3 tests/test_attack_path.py  # end-to-end injection simulation
-```
-
-It verifies that the guard regexes in `07-prompt-guard.yaml` actually match the
-payload in `discussions.json`, and that the poisoned thread ranks first so the
-attack fires however the prompt is phrased. Run `test_all.py` after editing any
-fixture. See `tests/README.md`.
-
-## Repo layout
-
-```
-agent/trendwatch.py                  the agent, never edited
-mcp-servers/*.py                     three servers, ten tools
-mcp-servers/fixtures/                one corpus, one poisoned thread
-configs/*.yaml                       one capability each
-configs/github-search.openapi.json   trimmed spec, 3 operations
-scripts/fake_idp.py                  minimal JWKS server for the identity demo
-tests/                               offline harness, no SDK required
-FACILITATOR.md                       facilitator runbook: timings, cut points, what to say
-out/                                 generated digests, gitignored
-```
