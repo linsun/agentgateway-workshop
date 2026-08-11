@@ -9,7 +9,9 @@
 #
 # Budget is deliberately small. Building a digest reads several full article
 # bodies and post texts, so this bites within two or three runs.
-
+config:
+  database:
+    url: sqlite://./data.db
 llm:
   port: 4000
   policies:

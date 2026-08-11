@@ -5,7 +5,9 @@
 # VERIFY THIS FILE FIRST. It is the smallest end-to-end check that your installed
 # agentgateway accepts the simplified `llm:` config shape. Every other config
 # here uses the same shape, so if this one binds on 4000, they all will.
-
+config:
+  database:
+    url: sqlite://./data.db
 llm:
   models:
   - name: trend-pro

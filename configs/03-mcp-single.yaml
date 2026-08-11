@@ -12,7 +12,9 @@
 # Declaring llm and mcp together keeps it to one process. Set:
 #   LLM_BASE_URL=http://localhost:4000/v1  LLM_MODEL=trend-pro
 #   MCP_URL=http://localhost:3000/mcp
-
+config:
+  database:
+    url: sqlite://./data.db
 llm:
   port: 4000
   models:
