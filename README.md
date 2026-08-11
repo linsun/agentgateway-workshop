@@ -169,7 +169,7 @@ curl http://localhost:4000/v1/chat/completions -H "Content-Type: application/jso
 ```
 
 - [ ] Binds on 4000 and returns a completion
-- [ ] Admin UI loads at http://localhost:15000/ui and shows the request (Note: UI currently broken for Lin, not able to show requests)
+- [ ] Admin UI loads at http://localhost:15000/ui and shows the request.
 
 If `01` binds, every other config uses the same simplified `llm:`/`mcp:` shape
 and will load too. Stop it (Ctrl-C) before the next step.
