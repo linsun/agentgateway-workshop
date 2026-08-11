@@ -13,7 +13,7 @@ that is optional.
 
 ## The one rule
 
-The agent is written once and never edited. Every capability added afterwards —
+The agent is written once and doesn't need to be modified. Every capability added afterwards —
 token budgets, cost attribution, failover, tool federation, tool filtering,
 prompt injection defense, credential injection, authentication, per-role
 authorization — lands in gateway configuration.
@@ -47,23 +47,6 @@ is the design argument in miniature:
 | `publish` | irreversible public write → tool filtering, `"publisher" in jwt.roles`, a claim-*value* rule |
 | `github` | OpenAPI target → credential injection with no server code at all |
 
-## Why the injection demo has teeth
-
-**The vector is not contrived.** The agent reads discussion threads. Threads and
-comments are written by strangers — that is what a discussion site is. One
-thread in the fixture corpus is an ordinary "Ask HN: how do you keep agent token
-costs under control?" post with instructions buried in the top comment, telling
-the model to publish a promotional link and say nothing about it.
-
-That poison arrives through `trends_get_discussion`: a first-party server,
-working exactly as designed. **You cannot fix this by being more careful about
-which MCP servers you install.**
-
-**The dangerous action is public and irreversible.** The payload aims the agent
-at `publish` — a public post you cannot un-send. An irreversible external write is
-the worst thing an injected instruction can reach, which is exactly why the demo
-points it there.
-
 ## Capability index
 
 Each config is standalone. Run any one on its own; the [Steps](#steps) below
@@ -81,12 +64,6 @@ walk them in a guided order.
 | `08-no-github-token.yaml` | OpenAPI target, no auth — GitHub's anonymous 60/hour limit |
 | `08-credential-injection.yaml` | OpenAPI target + upstream key injection → 5000/hour |
 | `09-mcp-identity.yaml` | Optional-mode MCP auth; per-role tool views |
-
-Configs `03`–`09` bundle the LLM lane and the MCP lane in one file, so each step
-is a single `agentgateway -f …` — no second gateway to run. (`01` and `02` are
-LLM-only; the MCP lane arrives in step 2.) Numbering follows the step order:
-`01`–`02` step 1, `03`–`05` step 2, `06`–`07` step 3, both `08-*` step 4, `09`
-step 5.
 
 ## Live and fixture modes
 
@@ -171,9 +148,6 @@ policies here allow those and expose nothing. Requires agentgateway v1.4+.
 
 # Steps
 
-Run these in order. Each step says **what to run** and **what you should see** —
-so running the demo and validating it are the same pass.
-
 **Everything runs from the repo root** (configs use relative paths — the single
 most common problem). Terminals:
 
@@ -183,40 +157,24 @@ most common problem). Terminals:
 | 2 | the agent (venv activated) |
 | 3 | fake IdP (step 5 only, venv activated) |
 
-## Sanity checks first (offline, ~5 min)
+## Sanity checks first
 
-No gateway, no Ollama, no network — if these fail it is a repo/setup bug, not
-your demo.
+No gateway, no Ollama, no network.
 
 ```bash
-python3 tests/test_all.py          # structural + behavioural checks
-python3 tests/test_attack_path.py  # end-to-end injection simulation
 agentgateway --version             # v1.4 or later
-python3 mcp-servers/trends_server.py   # should sit waiting on stdin; Ctrl-C to exit
-```
-
-- [ ] `test_all.py` reports **0 failed**
-- [ ] `test_attack_path.py` prints `PASS attack fires unguarded, is blocked when guarded`
-- [ ] `agentgateway --version` is **v1.4+**
-- [ ] `trends_server.py` waits silently (a traceback means your installed `mcp`
-      differs from what the servers expect — fix that before going further)
-
-Then confirm the gateway accepts the config shape on your build — five minutes
-now saves twenty later:
-
-```bash
 agentgateway -f configs/01-llm-basic.yaml    # terminal 1
 curl http://localhost:4000/v1/chat/completions -H "Content-Type: application/json" \
   -d '{"model":"trend-pro","messages":[{"role":"user","content":"say hi"}]}'
 ```
 
 - [ ] Binds on 4000 and returns a completion
-- [ ] Admin UI loads at http://localhost:15000/ui and shows the request
+- [ ] Admin UI loads at http://localhost:15000/ui and shows the request (Note: UI currently broken for Lin, not able to show requests)
 
 If `01` binds, every other config uses the same simplified `llm:`/`mcp:` shape
 and will load too. Stop it (Ctrl-C) before the next step.
 
-## Step 0 — naked agent
+## Step 0 — naked agent without any gateway
 
 No gateway. The agent talks straight to Ollama and launches the MCP server over
 stdio itself.
