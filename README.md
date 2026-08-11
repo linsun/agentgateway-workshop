@@ -192,12 +192,10 @@ python3 agent/trendwatch.py "what discussions are trending today?"
 - [ ] Calls `trending_discussions` (not something invented)
 - [ ] Returns a sensible answer in a few turns
 
-Run two more — one success can be luck. **If the model cannot reliably call
-tools, stop here** and try a different small model with good function-calling.
+Run two more — one success can be luck.
 
 ```bash
 python3 agent/trendwatch.py "what is trending about cost?"
-python3 agent/trendwatch.py "what topics can I follow?"
 ```
 
 ## Step 1 — LLM gateway, then a token budget
@@ -211,6 +209,7 @@ agentgateway -f configs/01-llm-basic.yaml
 # terminal 2 — the only agent-side change in the whole workshop
 export LLM_BASE_URL=http://localhost:4000/v1
 export LLM_MODEL=trend-pro
+export MCP_URL=stdio:./mcp-servers/trends_server.py # if not set already
 python3 agent/trendwatch.py "what discussions are trending today?"
 ```
 
