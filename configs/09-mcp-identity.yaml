@@ -21,6 +21,9 @@
 # (15000) collision two agentgateway processes would hit.
 #   LLM_BASE_URL=http://localhost:4000/v1  LLM_MODEL=trend-pro
 #   MCP_URL=http://localhost:3000/mcp
+config:
+  database:
+    url: sqlite://./data.db
 llm:
   port: 4000
   models:
@@ -30,7 +33,6 @@ llm:
         baseUrl: http://localhost:11434/v1
         model: qwen3:8b
         apiKey: ollama-does-not-check-this
-
 mcp:
   port: 3000
   policies:

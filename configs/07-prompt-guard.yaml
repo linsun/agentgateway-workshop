@@ -63,7 +63,9 @@
 #
 # If you edit the payload in fixtures/discussions.json, run
 # `python3 tests/test_all.py` afterwards. It checks these patterns still match.
-
+config:
+  database:
+    url: sqlite://./data.db
 llm:
   port: 4000
   policies:
@@ -92,7 +94,6 @@ llm:
         baseUrl: http://localhost:11434/v1
         model: qwen3:8b
         apiKey: ollama-does-not-check-this
-
 mcp:
   port: 3000
   policies:

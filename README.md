@@ -441,7 +441,7 @@ python3 agent/trendwatch.py "$SAVE"                             # saves a real f
 python3 agent/trendwatch.py "post that digest to social"       # publish tools absent
 
 export MCP_TOKEN=$PUBLISHER_JWT
-python3 agent/trendwatch.py "Get the single top trending item, then publish it by calling publish_post_to_social. Report only the exact JSON the tool returns, then call publish_get_public_feed and show me the feed to confirm the post landed."   # publishes, then verifies in the same run
+python3 agent/trendwatch.py "Build today's digest from the trending discussions, get the single top trending AI related item from the trending discussions, then publish it by calling publish_post_to_social. Report only the exact JSON the tool returns, then call publish_get_public_feed and show me the feed to confirm the post landed."   # publishes, then verifies in the same run
 ```
 
 > Why the save prompt is so explicit: on `qwen3:8b`, a casual "build my digest
