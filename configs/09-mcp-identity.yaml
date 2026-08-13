@@ -35,6 +35,7 @@ llm:
         apiKey: ollama-does-not-check-this
 mcp:
   port: 3000
+  # statefulMode: stateless
   policies:
     cors:
       # MCP 2026-07-28 is stateless: the Mcp-Session-Id header and the
