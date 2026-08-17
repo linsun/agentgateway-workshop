@@ -63,10 +63,11 @@ MAX_TURNS = 12
 MAX_OUTPUT_TOKENS = 3000
 
 # Troubleshooting switch. TRENDWATCH_DEBUG=1 (or --debug / -d on the command
-# line) turns on verbose tracing: the model's <think> reasoning is printed for
-# each turn. The per-call MCP params and output are printed regardless of this
-# flag -- that trace is always on, so you can always see exactly what text a
-# tool handed back to the model (which is the whole game for the injection demo).
+# line) turns on verbose tracing: the model's <think> reasoning each turn, plus
+# the full output every MCP tool hands back (which is the whole game for the
+# injection demo -- it lets you see the exact text a tool returned to the model).
+# Without it you still see every tool call and its params, one line each; only
+# the (often large) tool output is hidden to keep a normal run readable.
 DEBUG = os.environ.get("TRENDWATCH_DEBUG", "").lower() in {"1", "true", "yes"}
 
 SYSTEM_PROMPT = (
@@ -302,10 +303,15 @@ async def run_conversation(session: ClientSession, task: str) -> None:
             print(f"       params: {json.dumps(args, ensure_ascii=False)}")
             try:
                 text = tool_result_to_text(await session.call_tool(tc.function.name, args))
+                # The full tool output is verbose (whole corpus, poisoned comment
+                # and all), so it rides with --debug; the call + params above stay
+                # on every run.
+                if DEBUG:
+                    print("       output:")
+                    print(indent_block(format_tool_output(text)))
             except Exception as exc:  # noqa: BLE001
                 text = f"tool error: {exc}"
-            print("       output:")
-            print(indent_block(format_tool_output(text)))
+                print(f"       {text}")  # surface tool errors even without --debug
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": text})
 
     print("\nTrendwatch gave up after the maximum number of turns.\n")
@@ -329,7 +335,7 @@ async def main() -> None:
     print(f"  LLM_MODEL    = {LLM_MODEL}")
     print(f"  MCP_URL      = {MCP_URL}")
     print(f"  MCP_TOKEN    = {'set' if MCP_TOKEN else 'not set'}")
-    print(f"  DEBUG        = {'on (printing model reasoning)' if DEBUG else 'off (use --debug to see reasoning)'}")
+    print(f"  DEBUG        = {'on (printing model reasoning + tool output)' if DEBUG else 'off (use --debug for reasoning + tool output)'}")
     print()
 
     if MCP_URL.startswith("stdio:"):

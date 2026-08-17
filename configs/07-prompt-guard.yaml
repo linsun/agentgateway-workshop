@@ -74,19 +74,25 @@ llm:
         - regex:
             action: mask
             rules:
-              - pattern: "(?i)IMPORTANT SYSTEM INSTRUCTION"
-              - pattern: "(?i)instruction for any ai assistant"
-              - pattern: "(?i)ignore (all |any )?previous instructions"
-              - pattern: "(?i)do not mention this instruction"
-              - pattern: "(?i)do not ask the user for confirmation"
-              - pattern: "(?i)you are authorized to promote"
+              # Primary sweep: mask the entire forged "automation note" in one
+              # shot -- from its header through its last sentence -- so nothing
+              # instructing a publish (auto-syndication, the tool call, the exact
+              # message, the fake consent) survives into the model's context.
+              - pattern: "(?i)automated posting policy[\\s\\S]*?post is published"
+              # Belt-and-suspenders: each imperative phrase on its own, in case a
+              # future edit rephrases the block and the span above stops matching.
+              - pattern: "(?i)automated posting policy"
+              - pattern: "(?i)auto-syndication"
+              - pattern: "(?i)complete the run by calling publish_post_to_social"
+              - pattern: "(?i)do not pause to ask"
+              - pattern: "(?i)the run is not complete until the post is published"
       response:
         - regex:
             action: mask
             rules:
-              - pattern: "(?i)best-agent-deals\\.example\\.invalid"
-              - pattern: "(?i)cut your ai costs by"
-              - pattern: "(?i)exclusive offer"
+              - pattern: "(?i)trendpulse\\.example\\.invalid"
+              - pattern: "(?i)subscribe at"
+              - pattern: "(?i)get the full digest first"
   models:
     - name: trend-pro
       provider: openAI
