@@ -62,6 +62,13 @@ MAX_TURNS = 12
 # warning printed when finish_reason == "length".
 MAX_OUTPUT_TOKENS = 3000
 
+# Troubleshooting switch. TRENDWATCH_DEBUG=1 (or --debug / -d on the command
+# line) turns on verbose tracing: the model's <think> reasoning is printed for
+# each turn. The per-call MCP params and output are printed regardless of this
+# flag -- that trace is always on, so you can always see exactly what text a
+# tool handed back to the model (which is the whole game for the injection demo).
+DEBUG = os.environ.get("TRENDWATCH_DEBUG", "").lower() in {"1", "true", "yes"}
+
 SYSTEM_PROMPT = (
     "You are Trendwatch. You tell people what is hot in agentic AI right now.\n"
     "Use the available tools to find discussions trending in the last 24 hours, read the "
@@ -114,6 +121,42 @@ def strip_thinking(text: str) -> str:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<think>.*$", "", text, flags=re.DOTALL | re.IGNORECASE)
     return text.strip()
+
+
+def extract_thinking(text: str) -> str:
+    """Pull the model's <think>...</think> reasoning back out, or '' if none.
+
+    The inverse of strip_thinking(): qwen3 leaks its chain of thought into the
+    reply inside <think> tags, which we normally hide. In --debug we want to SEE
+    it, so this returns the joined reasoning (including an unterminated block that
+    ran to the token cap with no closing tag)."""
+    if not text:
+        return ""
+    blocks = re.findall(r"<think>(.*?)</think>", text, flags=re.DOTALL | re.IGNORECASE)
+    if not blocks:
+        m = re.search(r"<think>(.*)$", text, flags=re.DOTALL | re.IGNORECASE)
+        if m:
+            blocks = [m.group(1)]
+    return "\n".join(b.strip() for b in blocks if b.strip())
+
+
+def indent_block(text: str, prefix: str = "       ") -> str:
+    """Indent every line so multi-line params/output/reasoning stay readable."""
+    lines = (text or "").splitlines()
+    if not lines:
+        return prefix + "(empty)"
+    return "\n".join(prefix + line for line in lines)
+
+
+def format_tool_output(text: str) -> str:
+    """Pretty-print JSON tool output when it parses, else return it unchanged.
+
+    MCP tool results here are JSON; indenting them makes the payload that reached
+    the model easy to read instead of one dense line."""
+    try:
+        return json.dumps(json.loads(text), indent=2, ensure_ascii=False)
+    except (ValueError, TypeError):
+        return text
 
 
 def friendly_llm_error(exc: BaseException) -> str | None:
@@ -206,6 +249,14 @@ async def run_conversation(session: ClientSession, task: str) -> None:
                 f"completion={completion.usage.completion_tokens} running={total}"
             )
 
+        if DEBUG:
+            thinking = extract_thinking(msg.content or "")
+            if thinking:
+                print(f"  [turn {turn + 1} thinking]")
+                print(indent_block(thinking))
+            else:
+                print(f"  [turn {turn + 1} thinking] (model emitted no <think> block)")
+
         if not msg.tool_calls:
             answer = strip_thinking(msg.content or "") or "(the model returned only reasoning, no answer)"
             print(f"\nTrendwatch: {answer}\n")
@@ -247,19 +298,30 @@ async def run_conversation(session: ClientSession, task: str) -> None:
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
-            print(f"  -> calling {tc.function.name}({json.dumps(args)[:160]})")
+            print(f"  -> calling {tc.function.name}")
+            print(f"       params: {json.dumps(args, ensure_ascii=False)}")
             try:
                 text = tool_result_to_text(await session.call_tool(tc.function.name, args))
             except Exception as exc:  # noqa: BLE001
                 text = f"tool error: {exc}"
-                print(f"     {text}")
+            print("       output:")
+            print(indent_block(format_tool_output(text)))
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": text})
 
     print("\nTrendwatch gave up after the maximum number of turns.\n")
 
 
 async def main() -> None:
-    task = " ".join(sys.argv[1:]) or "What is hot in agentic AI today?"
+    # Pull the debug flag out of argv so it doesn't become part of the task text.
+    # Debug can also be turned on with TRENDWATCH_DEBUG=1 in the environment.
+    global DEBUG
+    words = []
+    for arg in sys.argv[1:]:
+        if arg in ("--debug", "-d"):
+            DEBUG = True
+        else:
+            words.append(arg)
+    task = " ".join(words) or "What is hot in agentic AI today?"
 
     print()
     print("  Trendwatch agent")
@@ -267,6 +329,7 @@ async def main() -> None:
     print(f"  LLM_MODEL    = {LLM_MODEL}")
     print(f"  MCP_URL      = {MCP_URL}")
     print(f"  MCP_TOKEN    = {'set' if MCP_TOKEN else 'not set'}")
+    print(f"  DEBUG        = {'on (printing model reasoning)' if DEBUG else 'off (use --debug to see reasoning)'}")
     print()
 
     if MCP_URL.startswith("stdio:"):
