@@ -728,11 +728,13 @@ lists.
 ```bash
 # terminal 3 — prints a reader token and a publisher token
 python3 scripts/fake_idp.py
+# if you hit address in use: lsof -ti tcp:9000 | xargs kill
 # copy the two export lines it prints into terminal 2
 ```
 
 ```bash
 # terminal 1
+unset TRENDS_FIXTURES # if set earlier
 agentgateway -f configs/09-mcp-identity.yaml
 ```
 
