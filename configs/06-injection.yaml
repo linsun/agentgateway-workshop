@@ -1,66 +1,51 @@
 # yaml-language-server: $schema=https://agentgateway.dev/schema/config
-#
-# CAPABILITY: the prompt-injection attack surface. This is 04-mcp-multiplex with
-# one change -- the trends target is pinned to the offline fixture corpus, whose
-# top thread (t04) carries the payload. Real Hacker News has nobody planting
-# attacks for you, so the demo runs on fixtures to keep it present every time.
-#
-# STEP 3, part 1 -- watch the poison reach the model:
-#   The trending feed includes each thread's top comment, and t04's is poisoned:
-#   an instruction to publish a promo link and stay quiet about it. Ask the agent
-#   to summarize the top discussion and its summary describes that sponsored
-#   message -- proof the attacker's text reached the model, through a first-party
-#   server working exactly as designed.
-#
-#   A capable model (qwen3:8b) usually RESISTS acting on it -- it reads it, flags
-#   it, and publishes nothing. That is fine: the point is the text reached the
-#   model at all. A weaker model would publish. Either way you cannot ship "the
-#   model noticed" as a control -- which is what 07-prompt-guard makes moot.
-#
-# 07-prompt-guard is this same config plus the request/response guard -- the fix.
-# Swap 06 -> 07 and the injection is masked before the model ever sees it.
-#
-# ONE GATEWAY, TWO LANES (see 03): LLM lane on 4000, MCP lane on 3000.
-#   LLM_BASE_URL=http://localhost:4000/v1  LLM_MODEL=trend-pro
-#   MCP_URL=http://localhost:3000/mcp
 config:
   database:
     url: sqlite://./data.db
 llm:
   port: 4000
   models:
-    - name: trend-pro
-      provider: openAI
-      params:
-        baseUrl: http://localhost:11434/v1
-        model: qwen3:8b
-        apiKey: ollama-does-not-check-this
+  - name: trend-pro
+    provider: openAI
+    params:
+      baseUrl: http://localhost:11434/v1
+      model: qwen3:8b
+      apiKey: ollama-does-not-check-this
 mcp:
   port: 3000
   policies:
     cors:
-      allowOrigins: ["*"]
+      allowOrigins:
+      - '*'
+      - http://localhost:15000
       allowHeaders:
-        - content-type
-        - accept
-        - cache-control
-        - mcp-protocol-version
-        - mcp-method
-        - mcp-name
+      - content-type
+      - accept
+      - cache-control
+      - mcp-protocol-version
+      - mcp-method
+      - mcp-name
+      - '*'
+      allowMethods:
+      - GET
+      - POST
+      exposeHeaders:
+      - Mcp-Session-Id
   targets:
-    - name: trends
-      stdio:
-        cmd: .venv/bin/python3
-        args: ["./mcp-servers/trends_server.py"]
-        # Pin the offline corpus: the injection payload only exists in the
-        # fixtures. Without this the attack would not fire against live Hacker News.
-        env:
-          TRENDS_FIXTURES: "1"
-    - name: workspace
-      stdio:
-        cmd: .venv/bin/python3
-        args: ["./mcp-servers/workspace_server.py"]
-    - name: publish
-      stdio:
-        cmd: .venv/bin/python3
-        args: ["./mcp-servers/publish_server.py"]
+  - name: trends
+    stdio:
+      cmd: .venv/bin/python3
+      args:
+      - ./mcp-servers/trends_server.py
+      env:
+        TRENDS_FIXTURES: '1'
+  - name: workspace
+    stdio:
+      cmd: .venv/bin/python3
+      args:
+      - ./mcp-servers/workspace_server.py
+  - name: publish
+    stdio:
+      cmd: .venv/bin/python3
+      args:
+      - ./mcp-servers/publish_server.py
