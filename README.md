@@ -787,14 +787,12 @@ If you prefer strict for MCP authentication and have it enforced on the agentgat
 agentgateway -f 09-mcp-identity-strict.yaml
 ```
 
-```bash
-# terminal 2
-unset MCP_TOKEN
-python3 agent/trendwatch.py "$SAVE"                             # anonymous: save tool absent, nothing written with 401 mcp authentication failure error in the gateway log
+Explore the agentgateway UI on port 15000. Check out MCP --> Tool Playground, apply cors & initialize as needed, you will not be able to see any tools without a proper auth token.
 
-export MCP_TOKEN=$READER_JWT
-python3 agent/trendwatch.py "$SAVE"                   
-```
+Configure the $READER_JWT token as the header in the MCP playground & initialize, you will be able to see 8 tools with the reader token (missing two publish post related tools). Update to use the $PUBLISHER_JWT token and reconnect, you will be able to see all of the 10 tools with the publish token.
+
+Explore MCP --> policies and MCP --> Servers to view the list of enabled policies and MCP servers.
+
 
 ## Wrap
 
