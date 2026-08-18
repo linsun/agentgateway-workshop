@@ -195,7 +195,7 @@ agent_src = (REPO / "agent" / "trendwatch.py").read_text()
 check("agent has no hardcoded tool names",
       not any(t in agent_src for t in ["trending_discussions", "post_to_social", "save_digest"]))
 check("agent reads config only from env",
-      agent_src.count("os.environ.get") == 5)
+      agent_src.count("os.environ.get") == 6)  # 5 runtime vars + TRENDWATCH_DEBUG
 check("temperature pinned to 0 for repeatability", "temperature=0" in agent_src)
 
 print(f"\n{'='*52}\n  {len(PASS)} passed, {len(FAIL)} failed")

@@ -29,6 +29,9 @@ Environment variables, and nothing else:
     MCP_URL        http(s) URL for streamable HTTP, or
                    stdio:<path.py> to launch one server as a subprocess.
     MCP_TOKEN      Optional bearer token, used once identity is turned on.
+    TRENDWATCH_DEBUG  Optional. 1/true prints the model's reasoning and full MCP
+                   tool output (same as passing --debug). Troubleshooting only;
+                   it changes nothing about how the agent talks to the servers.
 """
 
 from __future__ import annotations

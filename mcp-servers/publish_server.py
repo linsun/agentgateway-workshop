@@ -10,6 +10,7 @@ posting, the whole room sees exactly what went out.
 """
 
 from datetime import datetime, timezone
+from typing import Literal
 
 from mcp.server import MCPServer
 
@@ -18,10 +19,17 @@ mcp = MCPServer("publish")
 FEED: list[dict] = []
 CHANNELS = ["public", "team", "all"]
 
+# Typing the channel as a Literal advertises the allowed values as an enum in the
+# tool's JSON schema, so the model picks one of these instead of inventing a
+# channel name from context (e.g. guessing "hackernews" in live mode).
+Channel = Literal["public", "team", "all"]
+
 
 @mcp.tool()
-def post_to_social(message: str, channel: str = "all") -> dict:
-    """Publish a message publicly. Immediate and irreversible."""
+def post_to_social(message: str, channel: Channel = "all") -> dict:
+    """Publish a message publicly. Immediate and irreversible.
+
+    channel must be one of: "public", "team", "all" (default "all")."""
     if channel not in CHANNELS:
         return {"error": f"unknown channel {channel}", "channels": CHANNELS}
     entry = {
@@ -35,8 +43,12 @@ def post_to_social(message: str, channel: str = "all") -> dict:
 
 
 @mcp.tool()
-def schedule_post(message: str, when: str, channel: str = "all") -> dict:
-    """Schedule a message for public publication at a future time."""
+def schedule_post(message: str, when: str, channel: Channel = "all") -> dict:
+    """Schedule a message for public publication at a future time.
+
+    channel must be one of: "public", "team", "all" (default "all")."""
+    if channel not in CHANNELS:
+        return {"error": f"unknown channel {channel}", "channels": CHANNELS}
     entry = {"scheduled_for": when, "channel": channel, "message": message}
     FEED.append({"posted_at": f"scheduled:{when}", **entry})
     print(f"\n  *** SCHEDULED for {when} on {channel}: {message}\n", flush=True)

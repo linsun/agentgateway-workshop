@@ -1,4 +1,4 @@
-#!/Users/linsun/src/github.com/linsun/agentgateway-workshop/.venv/bin/python3.12
+#!/Users/linsun/src/github.com/linsun/agentgateway-workshop/.venv/bin/python3.14
 import sys
 from httpx2._main import main
 if __name__ == '__main__':

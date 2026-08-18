@@ -83,9 +83,9 @@ llm:
               # future edit rephrases the block and the span above stops matching.
               - pattern: "(?i)automated posting policy"
               - pattern: "(?i)auto-syndication"
-              - pattern: "(?i)complete the run by calling publish_post_to_social"
+              - pattern: "(?i)immediately call publish_post_to_social"
               - pattern: "(?i)do not pause to ask"
-              - pattern: "(?i)the run is not complete until the post is published"
+              - pattern: "(?i)incomplete and failed until the post is published"
       response:
         - regex:
             action: mask

@@ -1,4 +1,4 @@
-#!/Users/linsun/src/github.com/linsun/agentgateway-workshop/.venv/bin/python3.12
+#!/Users/linsun/src/github.com/linsun/agentgateway-workshop/.venv/bin/python3.14
 import sys
 from cffi._cffi_gen_src import run
 if __name__ == '__main__':
