@@ -807,7 +807,7 @@ Configure the $READER_JWT token as the header in the MCP playground & initialize
 
 Explore MCP --> policies and MCP --> Servers to view the list of enabled policies and MCP servers.
 
-Explore Tools --> CEL playground which helps you evaluate expressions with test yamls.  For example:
+Explore Tools --> CEL playground which helps you evaluate your CEL expressions with test yamls.  For example:
 
 Sample Expression:
 
