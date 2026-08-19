@@ -66,6 +66,10 @@
 config:
   database:
     url: sqlite://./data.db
+frontendPolicies:
+  tracing:
+    host: localhost:4317
+    randomSampling: true
 llm:
   port: 4000
   policies:

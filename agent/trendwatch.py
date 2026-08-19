@@ -32,6 +32,13 @@ Environment variables, and nothing else:
     TRENDWATCH_DEBUG  Optional. 1/true prints the model's reasoning and full MCP
                    tool output (same as passing --debug). Troubleshooting only;
                    it changes nothing about how the agent talks to the servers.
+    TRENDWATCH_TRACING  Optional. 1/true emits one OpenTelemetry trace per run,
+                   with the LLM and MCP requests stitched together via a
+                   traceparent header (needs the opentelemetry packages installed).
+    OTEL_EXPORTER_OTLP_PROTOCOL  Optional. grpc (default) or http/protobuf --
+                   which OTLP port to speak to; must match how Jaeger is exposed.
+    OTEL_EXPORTER_OTLP_ENDPOINT  Optional. OTLP collector URL; defaults to
+                   http://localhost:4317 for grpc, http://localhost:4318 for http.
 """
 
 from __future__ import annotations
@@ -72,6 +79,67 @@ MAX_OUTPUT_TOKENS = 3000
 # Without it you still see every tool call and its params, one line each; only
 # the (often large) tool output is hidden to keep a normal run readable.
 DEBUG = os.environ.get("TRENDWATCH_DEBUG", "").lower() in {"1", "true", "yes"}
+
+# Optional distributed tracing. OFF unless TRENDWATCH_TRACING=1, so a normal run
+# needs no extra dependency and behaves exactly as before. When on, the whole run
+# is ONE trace: a root span is opened for the run and the W3C traceparent header
+# is injected into every LLM (:4000) and MCP (:3000) request, so agentgateway
+# continues that trace instead of starting a fresh one per request -- LLM and MCP
+# spans land together in a single Jaeger trace. Export target defaults to the
+# local Jaeger OTLP/HTTP endpoint; override with OTEL_EXPORTER_OTLP_ENDPOINT.
+TRACING = os.environ.get("TRENDWATCH_TRACING", "").lower() in {"1", "true", "yes"}
+_tracer = None
+_inject = None
+if TRACING:
+    try:
+        from opentelemetry import trace as _ot_trace
+        from opentelemetry.propagate import inject as _inject
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        # Jaeger exposes OTLP on two ports and a given install may publish only one:
+        # gRPC on 4317, HTTP on 4318. The exporter MUST match the port -- sending
+        # HTTP to the gRPC port yields a BadStatusLine (an HTTP/2 frame parsed as an
+        # HTTP/1.1 status line); a closed port yields Connection refused. Choose with
+        # OTEL_EXPORTER_OTLP_PROTOCOL (grpc | http/protobuf). Defaults: grpc -> :4317,
+        # http -> :4318. Jaeger's OTLP/gRPC is the common default, so grpc is ours too.
+        _proto = os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc").lower()
+        _ep = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+        if _proto.startswith("grpc"):
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+            _exporter = OTLPSpanExporter(endpoint=_ep or "http://localhost:4317", insecure=True)
+        else:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+            _exporter = OTLPSpanExporter(endpoint=f"{(_ep or 'http://localhost:4318').rstrip('/')}/v1/traces")
+        _provider = TracerProvider(resource=Resource.create({"service.name": "trendwatch-agent"}))
+        _provider.add_span_processor(BatchSpanProcessor(_exporter))
+        _ot_trace.set_tracer_provider(_provider)
+        _tracer = _ot_trace.get_tracer("trendwatch")
+    except Exception as _exc:  # noqa: BLE001 -- OTel not installed or misconfigured
+        TRACING = False
+        print(f"  (tracing requested but disabled: {type(_exc).__name__}: {_exc})")
+
+
+def trace_headers() -> dict:
+    """W3C traceparent/tracestate for the active span, or {} when tracing is off.
+
+    Merged into both the LLM client's default headers and the MCP HTTP client's
+    headers so agentgateway threads every request onto the one run-level trace."""
+    if not TRACING or _inject is None:
+        return {}
+    carrier: dict = {}
+    _inject(carrier)
+    return carrier
+
+
+def run_span(name: str):
+    """The run's root span as a context manager, or a no-op when tracing is off."""
+    if TRACING and _tracer is not None:
+        return _tracer.start_as_current_span(name)
+    import contextlib
+    return contextlib.nullcontext()
+
 
 SYSTEM_PROMPT = (
     "You are Trendwatch. You tell people what is hot in AI and agentic systems right now.\n"
@@ -204,13 +272,19 @@ def tool_result_to_text(result) -> str:
 
 
 async def run_conversation(session: ClientSession, task: str) -> None:
-    # MCP 2026-07-28 has no initialize handshake -- protocol version, client
-    # info and capabilities travel inline in _meta per request. Client and
-    # servers here are all on the new SDK, so this is only called if the SDK
-    # still exposes it for reaching legacy servers. Harmless either way.
-    if hasattr(session, "initialize"):
-        await session.initialize()
-    listed = await session.list_tools()
+    # MCP 2026-07-28 is stateless: protocol version, client info and capabilities
+    # travel inline in _meta per request, so there is NO initialize handshake and
+    # no Mcp-Session-Id. Go straight to tools/list -- against a stateless gateway
+    # (mcp.statefulMode: stateless) that is all it takes, and the gateway logs show
+    # no initialize / notifications/initialized. Only if the server still demands
+    # the legacy lifecycle (older gateway or stateful listener) do we fall back to
+    # the handshake and retry, so the agent keeps working either way.
+    try:
+        listed = await session.list_tools()
+    except Exception:  # noqa: BLE001 -- legacy server: do the handshake, then retry
+        if hasattr(session, "initialize"):
+            await session.initialize()
+        listed = await session.list_tools()
     tools = mcp_tools_to_openai(listed.tools)
 
     print(f"  tools visible to the model ({len(tools)}):")
@@ -218,7 +292,10 @@ async def run_conversation(session: ClientSession, task: str) -> None:
         print(f"    - {t['function']['name']}")
     print()
 
-    client = AsyncOpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
+    # default_headers carries the run's traceparent onto every LLM request, so the
+    # :4000 spans join the same trace as the :3000 MCP spans (no-op if tracing off).
+    client = AsyncOpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY,
+                         default_headers=trace_headers() or None)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": task},
@@ -339,28 +416,33 @@ async def main() -> None:
     print(f"  MCP_URL      = {MCP_URL}")
     print(f"  MCP_TOKEN    = {'set' if MCP_TOKEN else 'not set'}")
     print(f"  DEBUG        = {'on (printing model reasoning + tool output)' if DEBUG else 'off (use --debug for reasoning + tool output)'}")
+    print(f"  TRACING      = {'on (one trace per run -> OTLP)' if TRACING else 'off (set TRENDWATCH_TRACING=1)'}")
     print()
 
-    if MCP_URL.startswith("stdio:"):
-        params = StdioServerParameters(
-            command=sys.executable,
-            args=[MCP_URL[len("stdio:"):]],
-        )
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await run_conversation(session, task)
-    else:
-        headers = {"Authorization": f"Bearer {MCP_TOKEN}"} if MCP_TOKEN else {}
-        # The 2.x SDK takes HTTP settings on the httpx client, not the transport.
-        async with httpx2.AsyncClient(headers=headers, timeout=httpx2.Timeout(30.0, read=300.0)) as http:
-            # MCP 2026-07-28 is stateless: there is no session to tear down, so
-            # skip the DELETE-on-close (it only earns a "Session termination
-            # failed: 202" and an SSE teardown race after the answer is printed).
-            async with streamable_http_client(
-                MCP_URL, http_client=http, terminate_on_close=False
-            ) as (read, write):
+    # One root span for the whole run: with tracing on, every LLM and MCP request
+    # below inherits its traceparent, so the run is a single trace (no-op if off).
+    with run_span("trendwatch.run"):
+        if MCP_URL.startswith("stdio:"):
+            params = StdioServerParameters(
+                command=sys.executable,
+                args=[MCP_URL[len("stdio:"):]],
+            )
+            async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await run_conversation(session, task)
+        else:
+            headers = {"Authorization": f"Bearer {MCP_TOKEN}"} if MCP_TOKEN else {}
+            headers.update(trace_headers())  # traceparent onto every MCP request
+            # The 2.x SDK takes HTTP settings on the httpx client, not the transport.
+            async with httpx2.AsyncClient(headers=headers, timeout=httpx2.Timeout(30.0, read=300.0)) as http:
+                # MCP 2026-07-28 is stateless: there is no session to tear down, so
+                # skip the DELETE-on-close (it only earns a "Session termination
+                # failed: 202" and an SSE teardown race after the answer is printed).
+                async with streamable_http_client(
+                    MCP_URL, http_client=http, terminate_on_close=False
+                ) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await run_conversation(session, task)
 
 
 if __name__ == "__main__":

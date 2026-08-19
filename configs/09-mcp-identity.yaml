@@ -1,84 +1,68 @@
 # yaml-language-server: $schema=https://agentgateway.dev/schema/config
-#
-# CAPABILITY: MCP authentication in optional mode plus identity-driven tool
-# authorization. Anonymous and token-bearing clients BOTH connect to the same
-# URL and see different tool lists.
-#
-#   read the trends  -> anyone, no token
-#   use the workspace -> any signed-in user      has(jwt.sub)
-#   publish          -> a specific claim value   "publisher" in jwt.roles
-#
-# Note that those last two are DIFFERENT CEL shapes: claim presence versus
-# claim value. That is why the workspace tier earns its place -- without it you
-# only ever demo one kind of rule.
-#
-# Run scripts/fake_idp.py first; it prints a reader token and a publisher token.
-#
-# Compare these rules to 05. They were not rewritten. They got a claim.
-
-# ONE GATEWAY, TWO LANES (see 03): this config serves the LLM lane on 4000 and
-# the MCP lane below. The agent needs both; one process avoids the admin-port
-# (15000) collision two agentgateway processes would hit.
-#   LLM_BASE_URL=http://localhost:4000/v1  LLM_MODEL=trend-pro
-#   MCP_URL=http://localhost:3000/mcp
 config:
   database:
     url: sqlite://./data.db
 llm:
   port: 4000
   models:
-    - name: trend-pro
-      provider: openAI
-      params:
-        baseUrl: http://localhost:11434/v1
-        model: qwen3:8b
-        apiKey: ollama-does-not-check-this
+  - name: trend-pro
+    provider: openAI
+    params:
+      baseUrl: http://localhost:11434/v1
+      model: qwen3:8b
+      apiKey: ollama-does-not-check-this
 mcp:
   port: 3000
-  # statefulMode: stateless
   policies:
     cors:
-      # MCP 2026-07-28 is stateless: the Mcp-Session-Id header and the
-      # protocol-level session are gone, so there is nothing to expose.
-      # Routing metadata now rides in headers instead of the JSON-RPC
-      # body, which is what lets a load balancer route without parsing.
-      allowOrigins: ["*"]
+      allowOrigins:
+      - '*'
+      - http://localhost:15000
       allowHeaders:
-        - content-type
-        - accept
-        - cache-control
-        - mcp-protocol-version
-        - mcp-method
-        - mcp-name
+      - content-type
+      - accept
+      - cache-control
+      - mcp-protocol-version
+      - mcp-method
+      - mcp-name
+      - '*'
+      allowMethods:
+      - GET
+      - POST
+      exposeHeaders:
+      - Mcp-Session-Id
     mcpAuthentication:
       mode: optional
       issuer: http://localhost:9000
       audiences:
-        - http://localhost:3000/mcp
+      - http://localhost:3000/mcp
       jwks:
         url: http://localhost:9000/.well-known/jwks.json
       resourceMetadata:
         resource: http://localhost:3000/mcp
         scopesSupported:
-          - read:all
+        - read:all
         bearerMethodsSupported:
-          - header
+        - header
     mcpAuthorization:
       rules:
-        - 'mcp.tool.target == "trends"'
-        - 'mcp.tool.target == "publish" && mcp.tool.name == "get_public_feed"'
-        - 'mcp.tool.target == "workspace" && has(jwt.sub)'
-        - 'mcp.tool.target == "publish" && has(jwt.roles) && "publisher" in jwt.roles'
+      - mcp.tool.target == "trends"
+      - mcp.tool.target == "publish" && mcp.tool.name == "get_public_feed"
+      - mcp.tool.target == "workspace" && has(jwt.sub)
+      - mcp.tool.target == "publish" && has(jwt.roles) && "publisher" in jwt.roles
   targets:
-    - name: trends
-      stdio:
-        cmd: .venv/bin/python3
-        args: ["./mcp-servers/trends_server.py"]
-    - name: workspace
-      stdio:
-        cmd: .venv/bin/python3
-        args: ["./mcp-servers/workspace_server.py"]
-    - name: publish
-      stdio:
-        cmd: .venv/bin/python3
-        args: ["./mcp-servers/publish_server.py"]
+  - name: trends
+    stdio:
+      cmd: .venv/bin/python3
+      args:
+      - ./mcp-servers/trends_server.py
+  - name: workspace
+    stdio:
+      cmd: .venv/bin/python3
+      args:
+      - ./mcp-servers/workspace_server.py
+  - name: publish
+    stdio:
+      cmd: .venv/bin/python3
+      args:
+      - ./mcp-servers/publish_server.py

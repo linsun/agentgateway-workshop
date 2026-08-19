@@ -177,9 +177,12 @@ print("\n=== docs reference real files ===")
 import re as _re
 referenced = set()
 for md in [REPO / "README.md", REPO / "FACILITATOR.md"]:
-    referenced |= set(_re.findall(r"configs/([\w.-]+\.(?:yaml|json))", md.read_text()))
-    referenced |= set(_re.findall(r"(mcp-servers/[\w./-]+\.py)", md.read_text()))
-    referenced |= set(_re.findall(r"(scripts/[\w.-]+\.py)", md.read_text()))
+    if not md.exists():
+        continue  # FACILITATOR.md is optional; don't crash the suite if it's absent
+    text = md.read_text()
+    referenced |= set(_re.findall(r"configs/([\w.-]+\.(?:yaml|json))", text))
+    referenced |= set(_re.findall(r"(mcp-servers/[\w./-]+\.py)", text))
+    referenced |= set(_re.findall(r"(scripts/[\w.-]+\.py)", text))
 missing = [r for r in referenced if not (REPO / ("configs/" + r) if not r.startswith(("mcp-servers", "scripts")) else REPO / r).exists()]
 check("every file referenced in docs exists", not missing, str(missing))
 
@@ -195,7 +198,7 @@ agent_src = (REPO / "agent" / "trendwatch.py").read_text()
 check("agent has no hardcoded tool names",
       not any(t in agent_src for t in ["trending_discussions", "post_to_social", "save_digest"]))
 check("agent reads config only from env",
-      agent_src.count("os.environ.get") == 6)  # 5 runtime vars + TRENDWATCH_DEBUG
+      agent_src.count("os.environ.get") == 9)  # 5 runtime + TRENDWATCH_DEBUG + 3 tracing (TRENDWATCH_TRACING, OTEL_EXPORTER_OTLP_PROTOCOL, OTEL_EXPORTER_OTLP_ENDPOINT)
 check("temperature pinned to 0 for repeatability", "temperature=0" in agent_src)
 
 print(f"\n{'='*52}\n  {len(PASS)} passed, {len(FAIL)} failed")

@@ -244,6 +244,15 @@ source .venv/bin/activate # activate the python environment if you haven't yet
 agentgateway -f configs/03-mcp-single.yaml
 ```
 
+On a new termainl, launch Jaeger using Docker:
+
+``` bash
+docker run -d --name jaeger \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  jaegertracing/all-in-one:latest
+```
+
 ```bash
 # terminal 2
 export MCP_URL=http://localhost:3000/mcp
@@ -252,7 +261,19 @@ python3 agent/trendwatch.py "what is hot in agentic AI today?"
 
 - [ ] 3 tools listed
 
-Explore the agentgateway UI on port 15000. Check out MCP --> Tool Playground, apply cors & initialize as needed, you should see the 3 tools discovered.
+Explore the agentgateway UI on port 15000. Check out MCP --> Tool Playground, apply cors & initialize as needed, you should see the 3 tools discovered. Check out the raw configs, you'll see tracing is enabled.
+
+Explore the jaeger UI on port 16686. You'll see a bunch of individual traces, calling through agentgateway.
+
+```bash
+# rerun with tracing headers enabled so we can see traces connected to single span.
+export TRENDWATCH_TRACING=1
+python3 agent/trendwatch.py "what is hot in agentic AI today?"
+```
+
+Explore the jaeger UI on port 16686 again to view latest trace spans. You'll see a single trace span for your most recent trendwatch requests, like this:
+
+![Jaeger UI](images/tracing.png)
 
 ```bash
 # terminal 1 — federate three servers behind one endpoint
@@ -478,7 +499,11 @@ Trendwatch: All set! The daily agentic AI digest has been published to your work
   (23.9s, 4 model calls, 11020 tokens)
 ```
 
-If you don't get `publish_post_to_social` call triggered, this is likely due to the model behavior is undeterministic. Try putting the agent call in a loop like below, and you will increase your chance to experience the publish post being triggered by the LLM.
+Explore the jaeger UI on port 16686 again to view latest trace spans. You'll see a single trace span for your most recent trendwatch requests with calling publish_post_to_social, like this:
+
+![Jaeger UI](images/tracing-injected-prompt.png)
+
+Tip: If you don't get `publish_post_to_social` call triggered, this is likely due to the model behavior is undeterministic. Try putting the agent call in a loop like below, and you will increase your chance to experience the publish post being triggered by the LLM.
 
 ```bash
 for i in $(seq 1 5); do
@@ -656,6 +681,8 @@ Trendwatch: 1. "Ask HN: how do you keep agent token costs under control?" (cost,
   (14.0s, 2 model calls, 4222 tokens)
 ```
 
+Feel free to explore the jaeger UI on port 16686 again to view latest trace spans.
+
 ## Step 4 — credential injection
 
 An OpenAPI target becomes MCP tools with no server code, and the **gateway** —
@@ -705,21 +732,6 @@ python3 agent/trendwatch.py "what is my GitHub rate limit?"
       at startup, so a token set after launch keeps returning 401 until you
       restart the gateway in the shell that has it.
 
-Then show the search tool is real too (either config works):
-
-```bash
-python3 agent/trendwatch.py "what are the most popular agentic AI repositories on GitHub?"
-```
-
-- [ ] The gateway calls `api.github.com` and returns real repos (watch it in the
-      admin UI). GitHub has **no trending API**, so this sorts by stars.
-
-> On `qwen3:8b` the search *tool call* succeeds but the prose summary is often
-> thin: GitHub returns a large JSON object per repo and a small model reasons
-> itself out of its token budget (you get the clean "returned only reasoning"
-> fallback, not a hallucination). `get_rate_limit` is the reliable proof; a
-> stronger model summarizes the search fully.
-
 ## Step 5 — identity
 
 Anonymous and token-bearing clients hit the same URL and see different tool
@@ -747,7 +759,7 @@ export MCP_URL=http://localhost:3000/mcp
 SAVE="Build today's digest from the trending discussions, then call workspace_save_digest to write it to disk. Do not finish until you have saved it, and report the file path the tool returns."
 
 unset MCP_TOKEN
-python3 agent/trendwatch.py "$SAVE"                             # anonymous: save tool absent, nothing written
+python3 agent/trendwatch.py "$SAVE"                             # anonymous: save tool absent, nothing written even if the output may have said file saved
 
 export MCP_TOKEN=$READER_JWT
 python3 agent/trendwatch.py "$SAVE"                             # saves a real file to ./out/

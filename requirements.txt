@@ -5,3 +5,10 @@ mcp>=2.0.0
 openai>=1.60.0
 pyjwt>=2.8.0
 cryptography>=42.0.0
+
+# Optional -- only needed for TRENDWATCH_TRACING=1 (distributed tracing to Jaeger
+# via OTLP). The agent runs fine without these; tracing just stays off. Install
+# both exporters so either OTLP port works: grpc :4317 (default) or http :4318.
+opentelemetry-sdk>=1.27.0
+opentelemetry-exporter-otlp-proto-grpc>=1.27.0
+opentelemetry-exporter-otlp-proto-http>=1.27.0

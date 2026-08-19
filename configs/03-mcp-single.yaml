@@ -2,6 +2,10 @@
 config:
   database:
     url: sqlite://./data.db
+frontendPolicies:
+  tracing:
+    host: localhost:4317
+    randomSampling: true
 llm:
   port: 4000
   models:
@@ -22,6 +26,11 @@ llm:
       - POST
 mcp:
   port: 3000
+  # MCP 2026-07-28 is stateless: no initialize handshake, no Mcp-Session-Id. Run
+  # the listener stateless so it accepts tools/list and tools/call directly and
+  # never allocates a session -- the agent then speaks the modern, session-less
+  # flow and the gateway log shows no initialize / notifications/initialized.
+  statefulMode: stateless
   policies:
     cors:
       allowOrigins:
@@ -38,8 +47,6 @@ mcp:
       allowMethods:
       - GET
       - POST
-      exposeHeaders:
-      - Mcp-Session-Id
   targets:
   - name: trends
     stdio:

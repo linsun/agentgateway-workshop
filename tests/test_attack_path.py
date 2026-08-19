@@ -110,7 +110,12 @@ class ClientSession:
     def __init__(self, *a, **kw):
         self.registry = {}
 
-    async def initialize(self):
+    def _load(self):
+        # Federate the servers once. Stateless clients (MCP 2026-07-28) call
+        # list_tools() with no initialize handshake, so load lazily here too --
+        # not only in initialize() -- so the registry is ready either way.
+        if self.registry:
+            return
         for f in ["trends_server.py", "workspace_server.py", "publish_server.py"]:
             target = f.replace("_server.py", "")
             spec = importlib.util.spec_from_file_location(f[:-3], REPO / "mcp-servers" / f)
@@ -120,7 +125,11 @@ class ClientSession:
             for name, fn in mod.mcp.tools.items():
                 self.registry[f"{target}_{name}"] = fn
 
+    async def initialize(self):
+        self._load()
+
     async def list_tools(self):
+        self._load()
         return types.SimpleNamespace(
             tools=[_Tool(n, (f.__doc__ or ""), {"type": "object", "properties": {}})
                    for n, f in self.registry.items()])
