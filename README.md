@@ -158,6 +158,8 @@ most common problem). Terminals:
 No gateway, no Ollama, no network.
 
 ```bash
+# install agentgateway if needed
+# curl -sL https://agentgateway.dev/install | bash
 agentgateway --version             # v1.4.1 or later
 agentgateway -f configs/01-llm-basic.yaml    # terminal 1
 curl http://localhost:4000/v1/chat/completions -H "Content-Type: application/json" \
