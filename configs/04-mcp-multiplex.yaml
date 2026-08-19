@@ -26,6 +26,7 @@ llm:
       - POST
 mcp:
   port: 3000
+  statefulMode: stateless
   policies:
     cors:
       allowOrigins:

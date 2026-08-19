@@ -17,6 +17,7 @@ llm:
       apiKey: ollama-does-not-check-this
 mcp:
   port: 3000
+  statefulMode: stateless
   policies:
     cors:
       allowOrigins:
