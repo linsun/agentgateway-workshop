@@ -807,6 +807,24 @@ Configure the $READER_JWT token as the header in the MCP playground & initialize
 
 Explore MCP --> policies and MCP --> Servers to view the list of enabled policies and MCP servers.
 
+Explore Tools --> CEL playground which helps you evaluate expressions with test yamls.  For example:
+
+Sample Expression:
+
+```
+mcp.tool.target == "publish" && has(jwt.roles) && "publisher" in jwt.roles
+```
+
+with sample request context yaml:
+
+```
+{
+  "jwt": { "sub": "publisher@example.invalid", "roles": ["reader"] },
+  "mcp": { "tool": { "target": "publish", "name": "post_to_social" } }
+}
+```
+
+and click on "Evaluate". This is false because the JWT doesn't have the publisher role.
 
 ## Wrap
 
