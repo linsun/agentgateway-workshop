@@ -128,6 +128,9 @@ class ClientSession:
     async def initialize(self):
         self._load()
 
+    async def discover(self):  # modern MCP 2026-07-28 negotiation (no legacy handshake)
+        self._load()
+
     async def list_tools(self):
         self._load()
         return types.SimpleNamespace(

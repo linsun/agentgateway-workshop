@@ -33,8 +33,8 @@ Environment variables, and nothing else:
                    tool output (same as passing --debug). Troubleshooting only;
                    it changes nothing about how the agent talks to the servers.
     TRENDWATCH_TRACING  Optional. 1/true emits one OpenTelemetry trace per run,
-                   with the LLM and MCP requests stitched together via a
-                   traceparent header (needs the opentelemetry packages installed).
+                   with the LLM and MCP requests stitched together via W3C
+                   trace context (needs the opentelemetry packages installed).
     OTEL_EXPORTER_OTLP_PROTOCOL  Optional. grpc (default) or http/protobuf --
                    which OTLP port to speak to; must match how Jaeger is exposed.
     OTEL_EXPORTER_OTLP_ENDPOINT  Optional. OTLP collector URL; defaults to
@@ -83,9 +83,9 @@ DEBUG = os.environ.get("TRENDWATCH_DEBUG", "").lower() in {"1", "true", "yes"}
 # Optional distributed tracing. OFF unless TRENDWATCH_TRACING=1, so a normal run
 # needs no extra dependency and behaves exactly as before. When on, the whole run
 # is ONE trace: a root span is opened for the run and the W3C traceparent header
-# is injected into every LLM (:4000) and MCP (:3000) request, so agentgateway
-# continues that trace instead of starting a fresh one per request -- LLM and MCP
-# spans land together in a single Jaeger trace. Export target defaults to the
+# is injected into every LLM request. The MCP SDK propagates trace context in
+# request `_meta`, and an HTTP hook mirrors that exact per-operation context into
+# headers for gateways that only extract there. Export target defaults to the
 # local Jaeger OTLP/HTTP endpoint; override with OTEL_EXPORTER_OTLP_ENDPOINT.
 TRACING = os.environ.get("TRENDWATCH_TRACING", "").lower() in {"1", "true", "yes"}
 _tracer = None
@@ -124,13 +124,25 @@ if TRACING:
 def trace_headers() -> dict:
     """W3C traceparent/tracestate for the active span, or {} when tracing is off.
 
-    Merged into both the LLM client's default headers and the MCP HTTP client's
-    headers so agentgateway threads every request onto the one run-level trace."""
+    Used by the LLM client's default headers. The MCP SDK handles its own trace
+    propagation through request `_meta`."""
     if not TRACING or _inject is None:
         return {}
     carrier: dict = {}
     _inject(carrier)
     return carrier
+
+
+async def mirror_mcp_trace_headers(request: httpx2.Request) -> None:
+    """Copy the MCP SDK's per-operation trace context from `_meta` to HTTP headers."""
+    try:
+        body = json.loads(request.content)
+        meta = body.get("params", {}).get("_meta", {})
+    except (AttributeError, json.JSONDecodeError, UnicodeDecodeError, httpx2.RequestNotRead):
+        return
+    for name in ("traceparent", "tracestate", "baggage"):
+        if isinstance(value := meta.get(name), str):
+            request.headers[name] = value
 
 
 def run_span(name: str):
@@ -272,19 +284,12 @@ def tool_result_to_text(result) -> str:
 
 
 async def run_conversation(session: ClientSession, task: str) -> None:
-    # MCP 2026-07-28 is stateless: protocol version, client info and capabilities
-    # travel inline in _meta per request, so there is NO initialize handshake and
-    # no Mcp-Session-Id. Go straight to tools/list -- against a stateless gateway
-    # (mcp.statefulMode: stateless) that is all it takes, and the gateway logs show
-    # no initialize / notifications/initialized. Only if the server still demands
-    # the legacy lifecycle (older gateway or stateful listener) do we fall back to
-    # the handshake and retry, so the agent keeps working either way.
-    try:
-        listed = await session.list_tools()
-    except Exception:  # noqa: BLE001 -- legacy server: do the handshake, then retry
-        if hasattr(session, "initialize"):
-            await session.initialize()
-        listed = await session.list_tools()
+    # Negotiate MCP 2026-07-28 before the first application request. discover()
+    # activates the SDK's modern per-request stamps (protocol version, client info
+    # and capabilities in `_meta`, plus the protocol/method HTTP headers), so the
+    # stateless gateway forwards tools/list without synthesizing a legacy initialize.
+    await session.discover()
+    listed = await session.list_tools()
     tools = mcp_tools_to_openai(listed.tools)
 
     print(f"  tools visible to the model ({len(tools)}):")
@@ -419,8 +424,9 @@ async def main() -> None:
     print(f"  TRACING      = {'on (one trace per run -> OTLP)' if TRACING else 'off (set TRENDWATCH_TRACING=1)'}")
     print()
 
-    # One root span for the whole run: with tracing on, every LLM and MCP request
-    # below inherits its traceparent, so the run is a single trace (no-op if off).
+    # One root span for the whole run. LLM requests inherit it through HTTP
+    # headers; MCP requests carry their operation span in both `_meta` and the
+    # matching HTTP headers (no-op if tracing is off).
     with run_span("trendwatch.run"):
         if MCP_URL.startswith("stdio:"):
             params = StdioServerParameters(
@@ -432,9 +438,13 @@ async def main() -> None:
                     await run_conversation(session, task)
         else:
             headers = {"Authorization": f"Bearer {MCP_TOKEN}"} if MCP_TOKEN else {}
-            headers.update(trace_headers())  # traceparent onto every MCP request
-            # The 2.x SDK takes HTTP settings on the httpx client, not the transport.
-            async with httpx2.AsyncClient(headers=headers, timeout=httpx2.Timeout(30.0, read=300.0)) as http:
+            # Mirror the SDK-created MCP operation span into HTTP headers at send
+            # time; a static default header would incorrectly carry the root span.
+            async with httpx2.AsyncClient(
+                headers=headers,
+                timeout=httpx2.Timeout(30.0, read=300.0),
+                event_hooks={"request": [mirror_mcp_trace_headers]},
+            ) as http:
                 # MCP 2026-07-28 is stateless: there is no session to tear down, so
                 # skip the DELETE-on-close (it only earns a "Session termination
                 # failed: 202" and an SSE teardown race after the answer is printed).
