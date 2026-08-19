@@ -16,9 +16,9 @@ that is optional.
 The agent is written once and doesn't need to be modified. Every capability added afterwards —
 token budgets, cost attribution, failover, tool federation, tool filtering,
 prompt injection defense, credential injection, authentication, per-role
-authorization — lands in gateway configuration.
+authorization — lands in gateway configuration. The only exception is minor code to support distributed tracing spans.
 
-`agent/trendwatch.py` is about 300 lines and contains no security, no budgets,
+`agent/trendwatch.py` contains no security, no budgets,
 no retries and no credentials.
 
 ## Architecture
@@ -113,7 +113,7 @@ curl http://localhost:11434/v1/chat/completions \
 
 Install the open source standalone binary from
 https://agentgateway.dev/docs/standalone/ and confirm `agentgateway --version`
-reports **v1.4 or later** (the release that added MCP 2026-07-28 support).
+reports **v1.4.1 or later** (the release that added MCP 2026-07-28 support).
 Everything in this repo requires only the open source build.
 
 ### Python
@@ -140,7 +140,7 @@ breaking revision. The protocol core is now stateless: the initialize/initialize
 handshake and the `Mcp-Session-Id` header are both gone, and protocol version,
 client info and capabilities travel inline in `_meta` on every request. Routing
 metadata moved to the `Mcp-Method` and `Mcp-Name` headers, which is why the CORS
-policies here allow those and expose nothing. Requires agentgateway v1.4+.
+policies here allow those and expose nothing. Requires agentgateway v1.4.1+.
 
 # Steps
 
@@ -158,7 +158,7 @@ most common problem). Terminals:
 No gateway, no Ollama, no network.
 
 ```bash
-agentgateway --version             # v1.4 or later
+agentgateway --version             # v1.4.1 or later
 agentgateway -f configs/01-llm-basic.yaml    # terminal 1
 curl http://localhost:4000/v1/chat/completions -H "Content-Type: application/json" \
   -d '{"model":"trend-pro","messages":[{"role":"user","content":"say hi"}]}'
